@@ -1,2 +1,4 @@
 socketIO-client==0.6.5
-
+asyncio
+websockets
+jsonpickle

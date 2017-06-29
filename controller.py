@@ -1,12 +1,13 @@
 import platform
 import os
 import uuid
-import urllib2
+import urllib.request, urllib.error, urllib.parse
 import json
 import traceback
 import tempfile
-
-
+import asyncio
+import websockets
+import jsonpickle
 
 import argparse
 parser = argparse.ArgumentParser(description='start robot control program')
@@ -32,14 +33,11 @@ parser.set_defaults(festival_tts=False)
 parser.add_argument('--auto-wifi', dest='auto_wifi', action='store_true')
 parser.set_defaults(auto_wifi=False)
 
-
 commandArgs = parser.parse_args()
-print commandArgs
-
-
+print(commandArgs)
 
 # watch dog timer
-os.system("sudo modprobe bcm2835_wdt")
+#os.system("sudo modprobe bcm2835_wdt")
 os.system("sudo /usr/sbin/service watchdog start")
 
 
@@ -52,11 +50,12 @@ if commandArgs.tts_volume > 50:
 # tested for USB audio device
 os.system("amixer -c 2 cset numid=3 %d%%" % commandArgs.tts_volume)
 
-server = "runmyrobot.com"
+server = "localhost:4000"
+#server = "runmyrobot.com"
 #server = "52.52.213.92"
 
 tempDir = tempfile.gettempdir()
-print "temporary directory:", tempDir
+print(("temporary directory:", tempDir))
 
 
 # motor controller specific imports
@@ -79,9 +78,9 @@ elif commandArgs.type == 'adafruit_pwm':
 elif commandArgs.led == 'max7219':
     import spidev
 else:
-    print "invalid --type in command line"
+    print("invalid --type in command line")
     exit(0)
-    
+
 #serialDevice = '/dev/tty.usbmodem12341'
 #serialDevice = '/dev/ttyUSB0'
 
@@ -94,12 +93,12 @@ if commandArgs.type == 'motor_hat':
         from Adafruit_MotorHAT import Adafruit_MotorHAT, Adafruit_DCMotor
         motorsEnabled = True
     except ImportError:
-        print "You need to install Adafruit_MotorHAT"
-        print "Please install Adafruit_MotorHAT for python and restart this script."
-        print "To install: cd /usr/local/src && sudo git clone https://github.com/adafruit/Adafruit-Motor-HAT-Python-Library.git"
-        print "cd /usr/local/src/Adafruit-Motor-HAT-Python-Library && sudo python setup.py install"
-        print "Running in test mode."
-        print "Ctrl-C to quit"
+        print("You need to install Adafruit_MotorHAT")
+        print("Please install Adafruit_MotorHAT for python and restart this script.")
+        print("To install: cd /usr/local/src && sudo git clone https://github.com/adafruit/Adafruit-Motor-HAT-Python-Library.git")
+        print("cd /usr/local/src/Adafruit-Motor-HAT-Python-Library && sudo python setup.py install")
+        print("Running in test mode.")
+        print("Ctrl-C to quit")
         motorsEnabled = False
 
 # todo: specificity is not correct, this is specific to a bot with a claw, not all motor_hat based bots
@@ -109,7 +108,7 @@ if commandArgs.type == 'motor_hat':
 import time
 import atexit
 import sys
-import thread
+import _thread
 import subprocess
 if (commandArgs.type == 'motor_hat') or (commandArgs.type == 'l298n') or (commandArgs.type == 'motozero'):
     import RPi.GPIO as GPIO
@@ -119,13 +118,13 @@ from socketIO_client import SocketIO, LoggingNamespace
 
 chargeIONumber = 17
 robotID = commandArgs.robot_id
-      
+
 if commandArgs.type == 'motor_hat':
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(chargeIONumber, GPIO.IN)
 if commandArgs.type == 'l298n':
     mode=GPIO.getmode()
-    print " mode ="+str(mode)
+    print(" mode ="+str(mode))
     GPIO.cleanup()
     #Change the GPIO Pins to your connected motors
     #visit http://bit.ly/1S5nQ4y for reference
@@ -187,7 +186,7 @@ if commandArgs.type == 'motozero':
 
     GPIO.setup(Motor2A,GPIO.OUT)
     GPIO.setup(Motor2B,GPIO.OUT)
-    GPIO.setup(Motor2Enable,GPIO.OUT) 
+    GPIO.setup(Motor2Enable,GPIO.OUT)
 
     GPIO.setup(Motor3A,GPIO.OUT)
     GPIO.setup(Motor3B,GPIO.OUT)
@@ -206,7 +205,7 @@ if commandArgs.led == 'max7219':
     #DIN -> RPi Pin 19
     #CLK -> RPi Pin 23
     #CS -> RPi Pin 24
-    
+
     # decoding:BCD
     spi.writebytes([0x09])
     spi.writebytes([0x00])
@@ -223,7 +222,7 @@ if commandArgs.led == 'max7219':
     spi.writebytes([0x0f])
     spi.writebytes([0x00])
     columns = [0x1,0x2,0x3,0x4,0x5,0x6,0x7,0x8]
-    LEDOn = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF] 
+    LEDOn = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]
     LEDOff = [0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0]
     LEDEmoteSmile = [0x0,0x0,0x24,0x0,0x42,0x3C,0x0,0x0]
     LEDEmoteSad = [0x0,0x0,0x24,0x0,0x0,0x3C,0x42,0x0]
@@ -234,19 +233,19 @@ if commandArgs.led == 'max7219':
         LEDEmoteSad = LEDEmoteSad[::-1]
         LEDEmoteTongue = LEDEmoteTongue[::-1]
         LEDEmoteSuprise = LEDEmoteSuprise[::-1]
-    
+
 def SetLED_On():
   if commandArgs.led == 'max7219':
     for i in range(len(columns)):
         spi.xfer([columns[i],LEDOn[i]])
 def SetLED_Off():
-  if commandArgs.led == 'max7219': 
+  if commandArgs.led == 'max7219':
     for i in range(len(columns)):
         spi.xfer([columns[i],LEDOff[i]])
 def SetLED_E_Smiley():
   if commandArgs.led == 'max7219':
     for i in range(len(columns)):
-        spi.xfer([columns[i],LEDEmoteSmile[i]]) 
+        spi.xfer([columns[i],LEDEmoteSmile[i]])
 def SetLED_E_Sad():
   if commandArgs.led == 'max7219':
     for i in range(len(columns)):
@@ -274,7 +273,7 @@ def SetLED_Full():
     # brightness MAX
     spi.writebytes([0x0a])
     spi.writebytes([0x0F])
-        
+
 SetLED_Off()
 
 steeringSpeed = 90
@@ -297,7 +296,7 @@ nightTimeDrivingSpeedActuallyUsed = commandArgs.night_speed
 if commandArgs.type == 'motor_hat':
     pwm = PWM(0x42)
 elif commandArgs.type == 'adafruit_pwm':
-    pwm = PWM(0x40) 
+    pwm = PWM(0x40)
 
 # Note if you'd like more debug output you can instead run:
 #pwm = PWM(0x40, debug=True)
@@ -318,38 +317,60 @@ armServo = [300, 300, 300]
 
 
 if commandArgs.env == 'dev':
-    print 'DEV MODE ***************'
-    print "using dev port 8122"
+    print('DEV MODE ***************')
+    print("using dev port 8122")
     port = 8122
 elif commandArgs.env == 'prod':
-    print 'PROD MODE *************'
-    print "using prod port 8022"
+    print('PROD MODE *************')
+    print("using prod port 8022")
     port = 8022
 else:
-    print "invalid environment"
+    print("invalid environment")
     sys.exit(0)
 
 
 if commandArgs.type == 'serial':
     # initialize serial connection
     serialBaud = 9600
-    print "baud:", serialBaud
+    print("baud:", serialBaud)
     #ser = serial.Serial('/dev/tty.usbmodem12341', 19200, timeout=1)  # open serial
     ser = serial.Serial(serialDevice, serialBaud, timeout=1)  # open serial
 
-    
-    
-print 'using socket io to connect to', server
-socketIO = SocketIO(server, port, LoggingNamespace)
-print 'finished using socket io to connect to', server
+
+
+print('using socket io to connect to', server)
+#socketIO = SocketIO(server, port, LoggingNamespace)
+
+awebsocket = websockets.connect('ws://10.180.0.105:4000/socket/websocket')
+websocket = asyncio.get_event_loop().run_until_complete(awebsocket)
+#
+# async def ws_on(msg)
+#     name = await websocket.recv()
+
+
+data = dict(topic="robots:test", event="phx_join", payload={}, ref=None)
+
+arez = websocket.send(json.dumps(data))
+rez = asyncio.get_event_loop().run_until_complete(arez)
+
+
+def ws_send(event, payload):
+    print("sending")
+    data = dict(topic="robots:test", event=event, payload=payload, ref=None)
+    arez = websocket.send(jsonpickle.encode(data))
+    rez = asyncio.get_event_loop().run_until_complete(arez)
+
+
+print('finished using socket io to connect to', server)
+print(rez)
 
 
 def setServoPulse(channel, pulse):
   pulseLength = 1000000                   # 1,000,000 us per second
   pulseLength /= 60                       # 60 Hz
-  print "%d us per period" % pulseLength
+  print("%d us per period" % pulseLength)
   pulseLength /= 4096                     # 12 bits of resolution
-  print "%d us per bit" % pulseLength
+  print("%d us per bit" % pulseLength)
   pulse *= 1000
   pulse /= pulseLength
   pwm.setPWM(channel, 0, pulse)
@@ -379,20 +400,20 @@ network={{
 
 def isInternetConnected():
     try:
-        urllib2.urlopen('http://216.58.192.142', timeout=1)
+        urllib.request.urlopen('http://216.58.192.142', timeout=1)
         return True
-    except urllib2.URLError as err:
+    except urllib.error.URLError as err:
         return False
 
-    
+
 def configWifiLogin(secretKey):
 
     url = 'https://%s/get_wifi_login/%s' % (server, secretKey)
     try:
-        print "GET", url
-        response = urllib2.urlopen(url).read()
+        print("GET", url)
+        response = urllib.request.urlopen(url).read()
         responseJson = json.loads(response)
-        print "get wifi login response:", response
+        print("get wifi login response:", response)
 
         with open("/etc/wpa_supplicant/wpa_supplicant.conf", 'r') as originalWPAFile:
             originalWPAText = originalWPAFile.read()
@@ -400,15 +421,15 @@ def configWifiLogin(secretKey):
         wpaText = WPA_FILE_TEMPLATE.format(name=responseJson['wifi_name'], password=responseJson['wifi_password'])
 
 
-        print "original(" + originalWPAText + ")"
-        print "new(" + wpaText + ")"
-        
+        print("original(" + originalWPAText + ")")
+        print("new(" + wpaText + ")")
+
         if originalWPAText != wpaText:
 
-            wpaFile = open("/etc/wpa_supplicant/wpa_supplicant.conf", 'w')        
+            wpaFile = open("/etc/wpa_supplicant/wpa_supplicant.conf", 'w')
 
-            print wpaText
-            print
+            print(wpaText)
+            print()
             wpaFile.write(wpaText)
             wpaFile.close()
 
@@ -418,9 +439,9 @@ def configWifiLogin(secretKey):
             time.sleep(2)
             os.system("reboot")
 
-        
+
     except:
-        print "exception while configuring setting wifi", url
+        print("exception while configuring setting wifi", url)
         traceback.print_exc()
 
 
@@ -428,13 +449,13 @@ def configWifiLogin(secretKey):
 def sendSerialCommand(command):
 
 
-    print(ser.name)         # check which port was really used
+    print((ser.name))         # check which port was really used
     ser.nonblocking()
 
     # loop to collect input
     #s = "f"
     #print "string:", s
-    print str(command.lower())
+    print(str(command.lower()))
     ser.write(command.lower() + "\r\n")     # write a string
     #ser.write(s)
     ser.flush()
@@ -452,7 +473,7 @@ def incrementArmServo(channel, amount):
 
     armServo[channel] += amount
 
-    print "arm servo positions:", armServo
+    print("arm servo positions:", armServo)
 
     if armServo[channel] > servoMax[channel]:
         armServo[channel] = servoMax[channel]
@@ -460,7 +481,7 @@ def incrementArmServo(channel, amount):
         armServo[channel] = servoMin[channel]
     pwm.setPWM(channel, 0, armServo[channel])
 
-        
+
 
 def times(lst, number):
     return [x*number for x in lst]
@@ -487,26 +508,26 @@ forward = json.loads(commandArgs.forward)
 backward = times(forward, -1)
 left = json.loads(commandArgs.left)
 right = times(left, -1)
-straightDelay = commandArgs.straight_delay 
+straightDelay = commandArgs.straight_delay
 turnDelay = commandArgs.turn_delay
 #Change sleeptime to adjust driving speed
 #Change rotatetimes to adjust the rotation. Will be multiplicated with sleeptime.
 l298n_sleeptime=0.2
 l298n_rotatetimes=5
 
-    
+
 def handle_exclusive_control(args):
         if 'status' in args and 'robot_id' in args and args['robot_id'] == robotID:
 
             status = args['status']
 
         if status == 'start':
-                print "start exclusive control"
+                print("start exclusive control")
         if status == 'end':
-                print "end exclusive control"
+                print("end exclusive control")
 
 
-                
+
 def say(message):
 
     tempFilePath = os.path.join(tempDir, "text_" + str(uuid.uuid4()))
@@ -516,7 +537,7 @@ def say(message):
 
 
     os.system('"C:\Program Files\Jampal\ptts.vbs" -u ' + tempFilePath)
-    
+
     if commandArgs.festival_tts:
         # festival tts
         os.system('festival --tts < ' + tempFilePath)
@@ -532,11 +553,11 @@ def say(message):
 
     os.remove(tempFilePath)
 
-    
-                
+
+
 def handle_chat_message(args):
 
-    print "chat message received:", args
+    print("chat message received:", args)
     rawMessage = args['message']
     withoutName = rawMessage.split(']')[1:]
     message = "".join(withoutName)
@@ -544,7 +565,7 @@ def handle_chat_message(args):
 
 
 def moveAdafruitPWM(command):
-    print "move adafruit pwm command", command
+    print("move adafruit pwm command", command)
     if command == 'L':
         pwm.setPWM(1, 0, 500)
 
@@ -555,17 +576,17 @@ def moveAdafruitPWM(command):
 
         pwm.setPWM(0, 0, 335)
 
-        
+
     if command == 'R':
         pwm.setPWM(1, 0, 300)
 
         pwm.setPWM(0, 0, 445)
-        
+
         time.sleep(0.5)
         pwm.setPWM(1, 0, 400)
 
         pwm.setPWM(0, 0, 335)
-        
+
     if command == 'F':
         pwm.setPWM(0, 0, 445)
         time.sleep(0.5)
@@ -575,7 +596,7 @@ def moveAdafruitPWM(command):
         time.sleep(0.5)
         pwm.setPWM(0, 0, 335)
 
-    
+
 def moveGoPiGo(command):
     if command == 'L':
         gopigo.left_rot()
@@ -594,8 +615,8 @@ def moveGoPiGo(command):
         time.sleep(0.35)
         gopigo.stop()
 
-    
-                
+
+
 def handle_command(args):
         now = datetime.datetime.now()
         now_time = now.time()
@@ -626,19 +647,19 @@ def handle_command(args):
         #    print "args command:", args['command']
 
 
-            
+
         if 'command' in args and 'robot_id' in args and args['robot_id'] == robotID:
 
-            print('got command', args)
+            print(('got command', args))
 
             command = args['command']
 
             if commandArgs.type == 'adafruit_pwm':
                 moveAdafruitPWM(command)
-            
+
             if commandArgs.type == 'gopigo':
                 moveGoPiGo(command)
-            
+
             if commandArgs.type == 'serial':
                 sendSerialCommand(command)
 
@@ -682,18 +703,17 @@ def handle_command(args):
                     time.sleep(0.05)
                 if command == 'C':
                     #mhArm.getMotor(2).setSpeed(127)
-                    #mhArm.getMotor(2).run(Adafruit_MotorHAT.FORWARD)           
+                    #mhArm.getMotor(2).run(Adafruit_MotorHAT.FORWARD)
                     incrementArmServo(2, 10)
                     time.sleep(0.05)
 
             if commandArgs.type == 'motor_hat':
                 turnOffMotors()
             if commandArgs.type == 'l298n':
-                runl298n(command)                                 
-            #setMotorsToIdle()
-	    if commandArgs.type == 'motozero':
-		runmotozero(command)
-            
+                runl298n(command)
+                #setMotorsToIdle()
+        if commandArgs.type == 'motozero':
+            runmotozero(command)
             if commandArgs.led == 'max7219':
                 if command == 'LED_OFF':
                     SetLED_Off()
@@ -817,48 +837,47 @@ def runmotozero(direction):
         GPIO.output(Motor1B, GPIO.LOW)
         GPIO.output(Motor2A, GPIO.LOW)
         GPIO.output(Motor4A, GPIO.LOW)
-	
-def handleStartReverseSshProcess(args):
-    print "starting reverse ssh"
-    socketIO.emit("reverse_ssh_info", "starting")
-    returnCode = subprocess.call(["/usr/bin/ssh", "-X", "-i", "/home/pi/reverse_ssh_key1.pem", "-N", "-R", "2222:localhost:22", "ubuntu@52.52.204.174"])
-    socketIO.emit("reverse_ssh_info", "return code: " + str(returnCode))
-    print "reverse ssh process has exited with code", str(returnCode)
 
-    
+def handleStartReverseSshProcess(args):
+    print("starting reverse ssh")
+    ws_send("reverse_ssh_info", "starting")
+    returnCode = subprocess.call(["/usr/bin/ssh", "-X", "-i", "/home/pi/reverse_ssh_key1.pem", "-N", "-R", "2222:localhost:22", "ubuntu@52.52.204.174"])
+    ws_send("reverse_ssh_info", "return code: " + str(returnCode))
+    print("reverse ssh process has exited with code", str(returnCode))
+
+
 def handleEndReverseSshProcess(args):
-    print "handling end reverse ssh process"
+    print("handling end reverse ssh process")
     resultCode = subprocess.call(["killall", "ssh"])
-    print "result code of killall ssh:", resultCode
+    print("result code of killall ssh:", resultCode)
 
 def on_handle_command(*args):
-   thread.start_new_thread(handle_command, args)
+   _thread.start_new_thread(handle_command, args)
 
 def on_handle_exclusive_control(*args):
-   thread.start_new_thread(handle_exclusive_control, args)
+   _thread.start_new_thread(handle_exclusive_control, args)
 
 def on_handle_chat_message(*args):
-   thread.start_new_thread(handle_chat_message, args)
-
-   
-#from communication import socketIO
-socketIO.on('command_to_robot', on_handle_command)
-socketIO.on('exclusive_control', on_handle_exclusive_control)
-socketIO.on('chat_message_with_name', on_handle_chat_message)
-
+   _thread.start_new_thread(handle_chat_message, args)
 
 def startReverseSshProcess(*args):
-   thread.start_new_thread(handleStartReverseSshProcess, args)
+   _thread.start_new_thread(handleStartReverseSshProcess, args)
 
 def endReverseSshProcess(*args):
-   thread.start_new_thread(handleEndReverseSshProcess, args)
+   _thread.start_new_thread(handleEndReverseSshProcess, args)
 
-socketIO.on('reverse_ssh_8872381747239', startReverseSshProcess)
-socketIO.on('end_reverse_ssh_8872381747239', endReverseSshProcess)
+# I have sent values from 2 buttons for swicthing a led with event 'control'
+
+#from communication import socketIO
+# socketIO.on('command_to_robot', on_handle_command)
+# socketIO.on('exclusive_control', on_handle_exclusive_control)
+# socketIO.on('chat_message_with_name', on_handle_chat_message)
+# socketIO.on('reverse_ssh_8872381747239', startReverseSshProcess)
+# socketIO.on('end_reverse_ssh_8872381747239', endReverseSshProcess)
 
 def myWait():
-  socketIO.wait()
-  thread.start_new_thread(myWait, ())
+  # socketIO.wait()
+  _thread.start_new_thread(myWait, ())
 
 
 if commandArgs.type == 'motor_hat':
@@ -866,7 +885,7 @@ if commandArgs.type == 'motor_hat':
         # create a default object, no changes to I2C address or frequency
         mh = Adafruit_MotorHAT(addr=0x60)
         #mhArm = Adafruit_MotorHAT(addr=0x61)
-    
+
 
 def turnOffMotors():
     mh.getMotor(1).run(Adafruit_MotorHAT.RELEASE)
@@ -877,7 +896,7 @@ def turnOffMotors():
     #mhArm.getMotor(2).run(Adafruit_MotorHAT.RELEASE)
     #mhArm.getMotor(3).run(Adafruit_MotorHAT.RELEASE)
     #mhArm.getMotor(4).run(Adafruit_MotorHAT.RELEASE)
-  
+
 
 if commandArgs.type == 'motor_hat':
     if motorsEnabled:
@@ -886,14 +905,14 @@ if commandArgs.type == 'motor_hat':
         motorB = mh.getMotor(2)
 
 def ipInfoUpdate():
-    socketIO.emit('ip_information',
+    ws_send('ip_information',
                   {'ip': subprocess.check_output(["hostname", "-I"]), 'robot_id': robotID})
 
 def sendChargeState():
     charging = GPIO.input(chargeIONumber) == 1
     chargeState = {'robot_id': robotID, 'charging': charging}
-    socketIO.emit('charge_state', chargeState)
-    print "charge state:", chargeState
+    ws_send('charge_state', chargeState)
+    print("charge state:", chargeState)
 
 def sendChargeStateCallback(x):
     sendChargeState()
@@ -904,7 +923,7 @@ if commandArgs.type == 'motor_hat':
 
 
 def identifyRobotId():
-    socketIO.emit('identify_robot_id', robotID);
+    ws_send('identify_robot_id', robotID);
 
 
 
@@ -929,9 +948,23 @@ elif platform.system() == 'Linux':
 
 
 lastInternetStatus = False
-    
+
+# async def receive_commands():
+#     async def areceive_commands():
+#         print("waiting for commands")
+#         while True:
+#             print("waiting for commands")
+#             call = await websocket.recv() # waits for anything from the phoenix server
+#             #call = asyncio.get_event_loop().run_until_complete(acall)
+#             control = json.loads(call)
+#             print(control)
+#
+#     asyncio.get_event_loop().run_until_complete(areceive_commands)
+#
+# _thread.start_new_thread(receive_commands, ())
+
 while True:
-    socketIO.wait(seconds=1)
+    # socketIO.wait(seconds=1)
 
     internetStatus = isInternetConnected()
     if internetStatus != lastInternetStatus:
@@ -944,12 +977,12 @@ while True:
     if commandArgs.auto_wifi:
         if commandArgs.secret_key is not None:
             configWifiLogin(commandArgs.secret_key)
-    
+
     if (waitCounter % 60) == 0:
 
         # tell the server what robot id is using this connection
         identifyRobotId()
-        
+
         if platform.system() == 'Linux':
             ipInfoUpdate()
 
