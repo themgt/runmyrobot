@@ -50,7 +50,8 @@ os.system("sudo /usr/sbin/service watchdog start")
 # tested for USB audio device
 #os.system("amixer -c 2 cset numid=3 %d%%" % commandArgs.tts_volume)
 
-server = "localhost:4000"
+server = "univac.ngrok.io"
+#server = "localhost:4000"
 #server = "runmyrobot.com"
 #server = "52.52.213.92"
 
@@ -337,17 +338,21 @@ if commandArgs.type == 'serial':
     ser = serial.Serial(serialDevice, serialBaud, timeout=1)  # open serial
 
 from websocket import create_connection
-ws = create_connection("ws://10.180.0.105:4000/socket/websocket")
+# ws = create_connection("ws://10.180.0.105:4000/socket/websocket")
+
+channel = "robots:%s" % robotID
+print("channel: %s" % channel)
+ws = create_connection("ws://univac.ngrok.io/socket/websocket")
 
 def ws_send(event, payload):
     print("sending")
-    data = dict(topic="robots:test", event=event, payload=payload, ref=None)
+    data = dict(topic=channel, event=event, payload=payload, ref=None)
     arez = ws.send(jsonpickle.encode(data))
 
-data = dict(topic="robots:test", event="phx_join", payload={}, ref=None)
+data = dict(topic=channel, event="phx_join", payload={}, ref=None)
 
 print("Sending 'Hello, World'...")
-rez = ws_send("phx_join", dict(topic="robots:test", event="phx_join", payload={}, ref=None))
+rez = ws_send("phx_join", dict(topic=channel, event="phx_join", payload={}, ref=None))
 arez = ws.send(jsonpickle.encode(data))
 print("Sent")
 print("Receiving...")
