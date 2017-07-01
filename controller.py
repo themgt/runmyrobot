@@ -44,11 +44,11 @@ os.system("sudo /usr/sbin/service watchdog start")
 # set volume level
 
 # tested for 3.5mm audio jack
-if commandArgs.tts_volume > 50:
-    os.system("amixer set PCM -- -100")
+#if commandArgs.tts_volume > 50:
+#    os.system("amixer set PCM -- -100")
 
 # tested for USB audio device
-os.system("amixer -c 2 cset numid=3 %d%%" % commandArgs.tts_volume)
+#os.system("amixer -c 2 cset numid=3 %d%%" % commandArgs.tts_volume)
 
 server = "localhost:4000"
 #server = "runmyrobot.com"
@@ -336,29 +336,41 @@ if commandArgs.type == 'serial':
     #ser = serial.Serial('/dev/tty.usbmodem12341', 19200, timeout=1)  # open serial
     ser = serial.Serial(serialDevice, serialBaud, timeout=1)  # open serial
 
+from websocket import create_connection
+ws = create_connection("ws://10.180.0.105:4000/socket/websocket")
+
+def ws_send(event, payload):
+    print("sending")
+    data = dict(topic="robots:test", event=event, payload=payload, ref=None)
+    arez = ws.send(jsonpickle.encode(data))
+
+data = dict(topic="robots:test", event="phx_join", payload={}, ref=None)
+
+print("Sending 'Hello, World'...")
+rez = ws_send("phx_join", dict(topic="robots:test", event="phx_join", payload={}, ref=None))
+arez = ws.send(jsonpickle.encode(data))
+print("Sent")
+print("Receiving...")
+result =  ws.recv()
+print("Received '%s'" % result)
+# ws.close()
 
 
 print('using socket io to connect to', server)
 #socketIO = SocketIO(server, port, LoggingNamespace)
 
-awebsocket = websockets.connect('ws://10.180.0.105:4000/socket/websocket')
-websocket = asyncio.get_event_loop().run_until_complete(awebsocket)
+# awebsocket = websockets.connect('ws://10.180.0.105:4000/socket/websocket')
+# websocket = asyncio.get_event_loop().run_until_complete(awebsocket)
 #
 # async def ws_on(msg)
 #     name = await websocket.recv()
 
 
-data = dict(topic="robots:test", event="phx_join", payload={}, ref=None)
+# data = dict(topic="robots:test", event="phx_join", payload={}, ref=None)
 
-arez = websocket.send(json.dumps(data))
-rez = asyncio.get_event_loop().run_until_complete(arez)
+# arez = websocket.send(json.dumps(data))
+# rez = asyncio.get_event_loop().run_until_complete(arez))
 
-
-def ws_send(event, payload):
-    print("sending")
-    data = dict(topic="robots:test", event=event, payload=payload, ref=None)
-    arez = websocket.send(jsonpickle.encode(data))
-    rez = asyncio.get_event_loop().run_until_complete(arez)
 
 
 print('finished using socket io to connect to', server)
@@ -414,7 +426,6 @@ def configWifiLogin(secretKey):
         response = urllib.request.urlopen(url).read()
         responseJson = json.loads(response)
         print("get wifi login response:", response)
-
         with open("/etc/wpa_supplicant/wpa_supplicant.conf", 'r') as originalWPAFile:
             originalWPAText = originalWPAFile.read()
 
@@ -536,7 +547,7 @@ def say(message):
     f.close()
 
 
-    os.system('"C:\Program Files\Jampal\ptts.vbs" -u ' + tempFilePath)
+    #os.system('"C:\Program Files\Jampal\ptts.vbs" -u ' + tempFilePath)
 
     if commandArgs.festival_tts:
         # festival tts
@@ -545,11 +556,12 @@ def say(message):
 
     else:
         # espeak tts
-        for hardwareNumber in (2, 0, 1):
-            if commandArgs.male:
-                os.system('cat ' + tempFilePath + ' | espeak --stdout | aplay -D plughw:%d,0' % hardwareNumber)
-            else:
-                os.system('cat ' + tempFilePath + ' | espeak -ven-us+f%d -s170 --stdout | aplay -D plughw:%d,0' % (commandArgs.voice_number, hardwareNumber))
+        print("espeak")
+        # for hardwareNumber in (2, 0, 1):
+        #     if commandArgs.male:
+        #         os.system('cat ' + tempFilePath + ' | espeak --stdout | aplay -D plughw:%d,0' % hardwareNumber)
+        #     else:
+        #         os.system('cat ' + tempFilePath + ' | espeak -ven-us+f%d -s170 --stdout | aplay -D plughw:%d,0' % (commandArgs.voice_number, hardwareNumber))
 
     os.remove(tempFilePath)
 
@@ -949,19 +961,17 @@ elif platform.system() == 'Linux':
 
 lastInternetStatus = False
 
-# async def receive_commands():
-#     async def areceive_commands():
-#         print("waiting for commands")
-#         while True:
-#             print("waiting for commands")
-#             call = await websocket.recv() # waits for anything from the phoenix server
-#             #call = asyncio.get_event_loop().run_until_complete(acall)
-#             control = json.loads(call)
-#             print(control)
-#
-#     asyncio.get_event_loop().run_until_complete(areceive_commands)
-#
-# _thread.start_new_thread(receive_commands, ())
+def receive_commands():
+    print("waiting for commands1")
+    while True:
+        print("waiting for commands2")
+        msg = ws.recv() # waits for anything from the phoenix server
+        print("got message from server")
+        print(msg)
+        control = json.loads(msg)
+        print(control)
+
+_thread.start_new_thread(receive_commands, ())
 
 while True:
     # socketIO.wait(seconds=1)
