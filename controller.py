@@ -355,24 +355,6 @@ result =  ws.recv()
 print("Received '%s'" % result)
 # ws.close()
 
-
-print('using socket io to connect to', server)
-#socketIO = SocketIO(server, port, LoggingNamespace)
-
-# awebsocket = websockets.connect('ws://10.180.0.105:4000/socket/websocket')
-# websocket = asyncio.get_event_loop().run_until_complete(awebsocket)
-#
-# async def ws_on(msg)
-#     name = await websocket.recv()
-
-
-# data = dict(topic="robots:test", event="phx_join", payload={}, ref=None)
-
-# arez = websocket.send(json.dumps(data))
-# rez = asyncio.get_event_loop().run_until_complete(arez))
-
-
-
 print('finished using socket io to connect to', server)
 print(rez)
 
@@ -880,13 +862,6 @@ def endReverseSshProcess(*args):
 
 # I have sent values from 2 buttons for swicthing a led with event 'control'
 
-#from communication import socketIO
-# socketIO.on('command_to_robot', on_handle_command)
-# socketIO.on('exclusive_control', on_handle_exclusive_control)
-# socketIO.on('chat_message_with_name', on_handle_chat_message)
-# socketIO.on('reverse_ssh_8872381747239', startReverseSshProcess)
-# socketIO.on('end_reverse_ssh_8872381747239', endReverseSshProcess)
-
 def myWait():
   # socketIO.wait()
   _thread.start_new_thread(myWait, ())
@@ -961,15 +936,33 @@ elif platform.system() == 'Linux':
 
 lastInternetStatus = False
 
+
+def on_server_recv(cmd):
+    payload = cmd["payload"]
+    print(payload)
+    if 'command' in payload:
+        print("[on_server_recv] passing in command '%s'" % payload["command"])
+        handle_command(dict(command = payload["command"], robot_id = robotID))
+    else:
+      print("no command to handle")
+
+    #from communication import socketIO
+    # socketIO.on('command_to_robot', on_handle_command)
+    # socketIO.on('exclusive_control', on_handle_exclusive_control)
+    # socketIO.on('chat_message_with_name', on_handle_chat_message)
+    # socketIO.on('reverse_ssh_8872381747239', startReverseSshProcess)
+    # socketIO.on('end_reverse_ssh_8872381747239', endReverseSshProcess)
+
+
 def receive_commands():
     print("waiting for commands1")
     while True:
         print("waiting for commands2")
         msg = ws.recv() # waits for anything from the phoenix server
         print("got message from server")
-        print(msg)
-        control = json.loads(msg)
-        print(control)
+        cmd = json.loads(msg)
+        print(cmd)
+        on_server_recv(cmd)
 
 _thread.start_new_thread(receive_commands, ())
 
